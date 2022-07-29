@@ -1,0 +1,545 @@
+<html>
+  <head> 
+    <title>Multidimensional Plotter</title>
+
+    <style>
+    body {margin: 0; }
+    canvas { width:100%; height: 100%; }
+   </style>
+
+   <link rel="stylesheet" href="main.css"/>
+    
+  </head>
+
+  <body>
+    
+    <script src="js/three.js"></script>
+    <script src = "js/OrbitControls.js"></script>
+    <script src="//unpkg.com/three-spritetext"></script>
+
+    <h1>Multidimensional Plotter</h1>
+
+    <p align="justify">
+      Welcome to the multidimensional plotter! To begin simply follow the steps below, ensure that your uploaded file contains only numbers past the first row and is in the form of a .CSV file. Once you have made your selections, simply press the submit button to view your graph! Use your mouse to pan around the graph and the scroll wheel to zoom in and out.
+    </p>
+
+
+    <p><b>1. Choose your graph type</b></p>
+    <div>
+      <label for="graph-type">Graph Selected: </label>
+      <select name="graph-type" id="graph-type">
+
+      <option value="Bar">Bar</option>
+
+      <option value="Scatter">Scatter</option>
+      </select>
+    </div>
+
+    
+      <p><b>2. Choose your colour scheme</b></p>
+      <div>
+      <input type="color" id="Primary" name="Primary"
+              value="#ff0000">
+      <label for="Primary">Primary Colour</label>
+      <br />
+     <input type="color" id="Secondary" name="Secondary"
+            value="#00ff00">
+     <label for="Secondary">Secondary Colour</label>
+
+    </div>
+
+    <p><b>3. Select your file</b></p>
+    <form id="myForm">
+      <input type="file" id="csvFile" accept=".csv" />
+      <br />
+      <input type="submit" value="Submit" />
+    </form>
+
+
+
+    <script>
+      const myForm = document.getElementById("myForm");
+      const csvFile = document.getElementById("csvFile");
+      let array;
+
+      //COLOUR CONVERTER FUNCTION
+      function convertColour(str){
+        var hex=str.split('#')[1];
+
+        ///code from "https://javascript.plainenglish.io/convert-hex-to-rgb-with-javascript-4984d16219c3"///
+        var aRgbHex = hex.match(/.{1,2}/g);
+        var aRgb = [
+            parseInt(aRgbHex[0], 16),
+            parseInt(aRgbHex[1], 16),
+            parseInt(aRgbHex[2], 16)
+        ];
+        //end 
+
+        var clfin = new THREE.Vector3(aRgb[0]/255,aRgb[1]/255,aRgb[2]/255);
+        return clfin;
+      }
+      
+      //COLOUR KEY FUNCTION
+      function colourKey(colour1,colour2,axes){
+        var gkey = new THREE.BoxBufferGeometry(1,axes,0);
+            gkey.computeBoundingBox();
+            var mkey = new THREE.ShaderMaterial({
+            uniforms: {
+                color1: {
+                value: new THREE.Color(colour1)
+                },
+                color2: {
+                value: new THREE.Color(colour2)
+                },
+                bboxMin: {
+                value: gkey.boundingBox.min
+                },
+                bboxMax: {
+                value: gkey.boundingBox.max
+                }
+            },
+            vertexShader: `
+                uniform vec3 bboxMin;
+                uniform vec3 bboxMax;
+            
+                varying vec2 vUv;
+
+                void main() {
+                vUv.y = (position.y - bboxMin.y) / (bboxMax.y - bboxMin.y);
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 color1;
+                uniform vec3 color2;
+            
+                varying vec2 vUv;
+                
+                void main() {
+                
+                gl_FragColor = vec4(mix(color1, color2, vUv.y), 1.0);
+                }
+            `,
+            wireframe: false
+            });
+            var mesh = new THREE.Mesh(gkey, mkey);
+            mesh.position.set(axes+5,axes/2,0);
+            scene.add(mesh);
+      }
+
+      //TICK LABELS FUNCTION
+      function tickLables(axes,pos)
+      {
+        for (i=-axes;i<=axes;i++)
+        {
+          if(i==0)
+          {
+            i++; //skips 0
+          }
+          const tick = new SpriteText(i,0.5);
+          tick.color='black';
+          if(pos=='x'){
+            tick.position.x = i;
+            tick.position.y = -0.5;
+            tick.position.z = 0;
+            scene.add(tick);
+          }else if(pos=='y'){
+            tick.position.x = -0.5;
+            tick.position.y = i;
+            tick.position.z = 0;
+            scene.add(tick);
+          }else if(pos=='z'){
+            tick.position.x = 0;
+            tick.position.y = -0.5;
+            tick.position.z = i;
+            scene.add(tick);
+          }else{
+            if(i<1)
+            {
+              i++; //makes sure no negative 
+            }else{
+            tick.position.x = axes+6;
+            tick.position.y = i;
+            tick.position.z = 0;
+            scene.add(tick);}
+          }
+        }
+      }
+    
+      //CSV TO ARRAY FUNCTION
+      function csvToArray(str, delimiter = ",") {
+
+        // slice from start of text to the first \n index
+        // use split to create an array from string by delimiter
+        const headers = str.slice(0, str.indexOf("\r\n")).split(delimiter);   //EDIT: added \r at beginning to split line properly
+
+        // slice from \n index + 1 to the end of the text
+        // use split to create an array of each csv value row
+        const rows = str.slice(str.indexOf("\n") + 1).split("\r\n");
+
+        // Map the rows
+        // split values from each row into an array
+        // use headers.reduce to create an object
+        // object properties derived from headers:values
+        // the object passed as an element of the array
+        const arr = rows.map(function (row) {
+          const values = row.split(delimiter);
+          const el = headers.reduce(function (object, header, index) {
+            object[header] = values[index];
+            return object;
+          }, {});
+          return el;
+        });
+        // return the array
+        return arr;
+      }
+      
+      
+    
+      myForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const input = csvFile.files[0];
+      const reader = new FileReader();
+
+      reader.onload = function (e) {
+        const text = e.target.result;
+        const data = csvToArray(text);
+
+        //DEFINING SOME BASIC VARIABLES
+        var x=[];
+        var y=[];
+        var z=[];
+        var w=[];
+
+
+        //GRAPH NAME
+        const graphName = input.name.split(".")[0];
+
+        //GETS AXES LABELS
+        const ticks = text.slice(0, text.indexOf("\r\n")).split(",");
+       
+        //GETTING DIMENSION
+        var dimension=ticks.length;
+
+        //USER PREFERENCES
+        var graph=document.getElementById("graph-type").value;
+        var colourPrimary = document.getElementById("Primary").value;
+        var colourSecondary = document.getElementById("Secondary").value;
+
+
+        //PARSES ARRAY VALUES TO NUMBERS
+        var array = JSON.parse(JSON.stringify(data));
+
+        for(var i = 0; i < data.length; i++) 
+        {
+          var n=0;
+          tempVal=Object.values(array[i]);
+          
+          //3-DIMENSIONAL
+          if(dimension==3)
+          {
+            x.push(parseFloat(tempVal[n]));
+            n++;
+            y.push(parseFloat(tempVal[n]));
+            n++;
+            z.push(parseFloat(tempVal[n]));
+          }
+          //4-DIMENSIONAL
+          else if(dimension==4)
+          {
+            x.push(parseFloat(tempVal[n]));
+            n++;
+            y.push(parseFloat(tempVal[n]));
+            n++;
+            z.push(parseFloat(tempVal[n]));
+            n++;
+            w.push(parseFloat(tempVal[n]));
+          }
+        }
+
+        //MAX AND MIN
+        const x_min = Math.min.apply(null,x);
+        const x_max = Math.max.apply(null,x);
+
+        const y_min = Math.min.apply(null,y);
+        const y_max = Math.max.apply(null,y);
+
+        const z_min = Math.min.apply(null,z);
+        const z_max = Math.max.apply(null,z);
+
+        const w_min = Math.min.apply(null,w);
+        const w_max = Math.max.apply(null,w);
+
+        //NORMALISATION FOR COLOUR
+        var w_norm=[];
+
+        for (var i=0; i<w.length; i++)
+        {
+          w_norm.push((w[i]-w_min)/(w_max-w_min));
+        }
+
+    
+        //MAKLE SURE AXES ARE LARGE ENOUGH FOR GIVEN DATA
+        var axes = 10;
+
+        while ((axes<x_max)||(axes<y_max)||(axes<z_max)||(axes<w_max))
+        {
+          axes=axes+10;
+        }
+
+  
+        //CREATE LINES FOR THE AXES
+      
+        const mat = new THREE.LineBasicMaterial( { color: 0x000000 } );
+        const points = [];
+
+        //X axis
+        points.push( new THREE.Vector3( axes, 0, 0 ) );
+        points.push( new THREE.Vector3( -1*axes, 0, 0 ) );
+        points.push( new THREE.Vector3( 0, 0, 0 ) );
+
+        //Y axis
+        points.push( new THREE.Vector3( 0, axes, 0 ) );
+        points.push( new THREE.Vector3( 0, axes*-1, 0 ) );
+        points.push( new THREE.Vector3( 0, 0, 0 ) );
+        
+        //Z axis
+        points.push( new THREE.Vector3( 0, 0, axes ) );
+        points.push( new THREE.Vector3( 0, 0, axes*-1 ) );
+        points.push( new THREE.Vector3( 0, 0, 0 ) );
+
+        const geo = new THREE.BufferGeometry().setFromPoints( points );
+        const line = new THREE.Line( geo, mat );
+        scene.add( line );
+
+
+        //SETS AXES LABELS
+        const xLabel = new SpriteText(ticks[0],1);
+        xLabel.color='black';
+        xLabel.position.x = axes+1;
+        xLabel.position.y = 0;
+        xLabel.position.z = 0;
+        scene.add(xLabel);
+
+        const yLabel = new SpriteText(ticks[2],1);
+        yLabel.color='black';
+        yLabel.position.x = 0;
+        yLabel.position.y = axes+1;
+        yLabel.position.z = 0;
+        scene.add(yLabel);
+
+        const zLabel = new SpriteText(ticks[1],1);
+        zLabel.color='black';
+        zLabel.position.x = 0;
+        zLabel.position.y = 0;
+        zLabel.position.z = axes+1;
+        scene.add(zLabel);
+
+        //W LABEL (4D) //
+
+        if (dimension==4)
+        {
+          const wLabel = new SpriteText(ticks[3],1);
+          wLabel.color='black';
+          wLabel.position.x = axes+5;
+          wLabel.position.y = axes+0.5;
+          wLabel.position.z = 0;
+          scene.add(wLabel);
+
+          //tick label
+          tickLables(axes,'w');
+        }
+
+        //TICK LABELS
+        tickLables(axes,'x');
+        tickLables(axes,'y');
+        tickLables(axes,'z');
+
+
+        //SETS GRAPH NAME
+        
+        const GraphNameText = new SpriteText(graphName, 0.1);
+        GraphNameText.color = 'white';
+        GraphNameText.backgroundColor = colourPrimary;
+        GraphNameText.borderColor = 'lightgrey';
+        GraphNameText.borderWidth = 0.5;
+        GraphNameText.borderRadius = 3;
+        GraphNameText.padding = [3, 1];
+        GraphNameText.position.x = axes/2;
+        GraphNameText.position.y = axes*1.5;
+        scene.add(GraphNameText);
+      
+
+        //ASSIGN COLOUR
+
+        if (dimension==3)
+        {
+          var final_colour = convertColour(colourPrimary);
+        }else if(dimension==4){
+
+         var coloursArray=[];
+         for (var i=0; i<w_norm.length; i++)
+          {
+           var c1=convertColour(colourPrimary); //priamry
+           var c2=convertColour(colourSecondary);//secondary
+
+           var temp_scalar=(1-w_norm[i]); //scalar value
+
+           var temp_colour1=new THREE.Vector3(0,0,0); //initialises as a vector
+           temp_colour1= c1.multiplyScalar(temp_scalar);
+
+           var temp_colour2=new THREE.Vector3(0,0,0);
+           temp_colour2=c2.multiplyScalar(w_norm[i]);
+            
+           var final_colour=new THREE.Vector3(0,0,0);
+           final_colour=final_colour.addVectors(temp_colour1,temp_colour2);
+           coloursArray.push(final_colour);
+          }
+        }
+       
+        //CREATES SHAPES
+
+        switch(graph)
+        {
+
+          case "Scatter":
+            
+            if(dimension==3)
+            {
+            var geometry = new THREE.SphereGeometry(0.1,25,25);
+            var material = new THREE.MeshPhongMaterial( {color: new THREE.Color(final_colour.x,final_colour.y,final_colour.z), wireframe: false }); 
+
+            for (var j=0; j< array.length; j++)
+            {
+              var dot = new THREE.Mesh( geometry, material);
+              dot.position.set(x[j],z[j],y[j]);
+              scene.add(dot);
+            }
+          } else if(dimension==4)
+          {
+            var geometry = new THREE.SphereGeometry(0.1,25,25);
+
+            for (var j=0; j< array.length; j++)
+            {
+              temp_vec=new THREE.Vector3(0,0,0);
+              temp_vec=coloursArray[j];
+              var material = new THREE.MeshBasicMaterial( {color: new THREE.Color(temp_vec.x,temp_vec.y,temp_vec.z) , wireframe: false }); 
+              var dot = new THREE.Mesh( geometry, material);
+              dot.position.set(x[j],z[j],y[j]);
+              scene.add(dot);
+            }
+            colourKey(colourPrimary,colourSecondary,axes);
+          }
+            break;
+            
+
+          case "Bar":
+
+          if (dimension==3)
+          {
+            var geometry = new THREE.BoxGeometry(1,1,1);
+            var material = new THREE.MeshPhongMaterial( {color: new THREE.Color(final_colour.x,final_colour.y,final_colour.z), wireframe: false }); 
+            for (var j=0; j< array.length; j++)
+            {
+              var cube = new THREE.Mesh( geometry, material);
+              cube.scale.set(1,z[j],1);
+              cube.position.set(x[j],z[j]/2,y[j]);
+              scene.add(cube);
+            }
+          }else if(dimension==4)
+          {
+            var geometry = new THREE.BoxGeometry(1,1,1);
+
+            for (var j=0; j< array.length; j++)
+            {
+              temp_vec=new THREE.Vector3(0,0,0);
+              temp_vec=coloursArray[j];
+              var material = new THREE.MeshBasicMaterial( {color: new THREE.Color(temp_vec.x,temp_vec.y,temp_vec.z) , wireframe: false }); 
+              var cube = new THREE.Mesh( geometry, material);
+              cube.scale.set(1,z[j],1);
+              cube.position.set(x[j],z[j]/2,y[j]);
+              scene.add(cube);
+            }
+            colourKey(colourPrimary,colourSecondary,axes);
+          }
+           break;
+        }
+          ///////Lighting///////////
+
+          //Spotlight//
+
+          const spotLight = new THREE.SpotLight( 0xffffff );
+          spotLight.position.set( axes, axes, axes );
+
+          spotLight.castShadow = true;
+
+          spotLight.shadow.mapSize.width = 10;
+          spotLight.shadow.mapSize.height = 10;
+
+          spotLight.shadow.camera.near = 50;
+          spotLight.shadow.camera.far = 40;
+          spotLight.shadow.camera.fov = 30;
+
+          scene.add( spotLight );
+
+      };
+      reader.readAsText(input);
+    });
+  
+
+    //creating scene
+    var scene = new THREE.Scene( );
+    scene.background = new THREE.Color(0xffffff);
+
+    //camera set up
+    var camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 1, 1000);
+    camera.position.set( 10, 10, 25);
+    camera.lookAt( 0, 5, 0 );
+
+    var renderer = new THREE.WebGLRenderer( );
+    renderer.setSize( window.innerWidth, window.innerHeight );
+    document.body.appendChild( renderer.domElement );
+
+
+    // update viewport on resize
+    window.addEventListener('resize', function()
+    {
+        var width = window.innerWidth;
+        var height = window.innerHeight;
+        renderer.setSize(width, height);
+        camera.aspect = width/height;
+        camera.updateProjectionMatrix();
+    });
+
+    // Orbit Controls
+    controls = new THREE.OrbitControls( camera, renderer.domElement);
+
+    // game logic
+    var update = function( )
+    {
+       // cube.rotation.x += 0.01;
+        //cube.rotation.y += 0.005;
+    };
+
+    // draw scene
+    var render = function( )
+    {
+        renderer.render( scene, camera );
+    };
+
+    // run game loop (upgrade, render, repeat)
+    var GameLoop = function( )
+    {
+        requestAnimationFrame( GameLoop );
+
+        update( );
+        render( );
+    };
+
+    GameLoop( );  
+  
+    </script>
+
+ </body>
+
+</html>
