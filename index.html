@@ -543,7 +543,7 @@
             {
               temp_vec=new THREE.Vector3(0,0,0);
               temp_vec=coloursArray[j];
-              var material = new THREE.MeshPhongMaterial( {color: new THREE.Color(temp_vec.x,temp_vec.y,temp_vec.z) , wireframe: false }); 
+              var material = new THREE.MeshBasicMaterial( {color: new THREE.Color(temp_vec.x,temp_vec.y,temp_vec.z) , wireframe: false }); 
               var cube = new THREE.Mesh( geometry, material);
               cube.scale.set(1,z[j],1);
               cube.position.set(x[j],z[j]/2,y[j]);
